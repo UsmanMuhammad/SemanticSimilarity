@@ -12,8 +12,7 @@ import org.apache.jena.riot.Lang
 import org.apache.spark.graphx
 import org.apache.jena.query.Query
 import org.apache.spark.graphx.util.GraphGenerators
-import org.apache.spark.graphx.lib.ShortestPaths
-import org.apache.spark.graphx.{ Graph, VertexId, Edge, EdgeDirection }
+import org.apache.spark.graphx.{ Graph, VertexId, Edge }
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.rdd.RDD
 import scala.util.Random.nextInt
@@ -55,6 +54,7 @@ object Semantic {
 
     //Data in triples
     val triples = spark.rdf(lang)(input)
+    val triplesList = triples.collect
 
     //convert the RDD into a graph
     val graph = buildGraph(triples)
@@ -65,11 +65,14 @@ object Semantic {
     val numOfVertices = graph.vertices.count.toInt
 
     //Get only the VertexIds of all the nodes.
-    val VertexIds: List[VertexId] = graph.vertices.map(node => node._1).collect().toList
+    //val VertexIds: List[VertexId] = graph.vertices.map(node => node._1).collect().toList
+    val vertexIdsRDD = graph.vertices.map(node => node._1)
+    //val tempSSSp = vertexIdsRDD.map(f => findShortestPath(graph, f))
+    //println(tempSSSp.count)
+    //println(vertexIdsRDD.count, VertexIds.length)
     
-
-    val VertexIdsCount = VertexIds.length
-    val wpathList = initialList(VertexIds, VertexIdsCount)
+    //val VertexIdsCount = VertexIds.length
+    //val wpathList = initialList(VertexIds, VertexIdsCount)
     
 
     val totalInstances = triples
@@ -78,72 +81,93 @@ object Semantic {
         (triple.objectMatches(OWL.Thing.asNode()))))
 
     val totalInstancesCount = totalInstances.count.toDouble
-    val nodeList = graph.vertices.collect.toList
+    //val nodeList = graph.vertices.collect.toList
 
     var distanceRDD = spark.sparkContext.emptyRDD[(VertexId, VertexId, (Double, List[VertexId]))]
-    var IC = spark.sparkContext.emptyRDD[(VertexId, Double)]
+    //var SP = spark.sparkContext.emptyRDD[Graph[(Double, List[VertexId]), Double]]
+    //var IC = spark.sparkContext.emptyRDD[(VertexId, Double)]
     
 
     //This part calculates the Information Content and the shortest distance from every node to every other node.
-    for (w <- 0 until 10) {
-      var sourceId: VertexId = VertexIds(w) // The ultimate source
-
-      val shortestPathToAllNodes = findShortestPath(graph, sourceId)
-
-      //var tempDistanceRDD = sssp2.vertices.map(v => (sourceId, v._1, v._2))
-      var tempDistanceRDD = shortestPathToAllNodes.vertices.collect {
-        case v if (wpathList.exists(p => (p._1 == sourceId) && (p._2 == v._1))) =>
-          (sourceId, v._1, v._2)
+    //for (w <- 0 until 5) {
+      //var sourceId: VertexId = VertexIds(w) // The ultimate source
+      
+      //val shortestPathToAllNodes = findShortestPath(graph, sourceId)
+      val shortestPathToAllNodes = vertexIdsRDD.map({
+        case id => findShortestPath(graph, id)
+        
       }
+        //findShortestPath(graph, id)
+      )
+      println(shortestPathToAllNodes.count)
+      //shortestPathToAllNodes.take(3).foreach(println(_))
+      val IC = graph.vertices.map({
+          case node => calculateIC(triplesList, node._2, totalInstancesCount)
+        //val classInstancesCount = classInstances.count.toDouble
 
-      distanceRDD = distanceRDD.union(tempDistanceRDD)
+        //val ic = -(scala.math.log10(classInstancesCount / totalInstancesCount))
+        //val ic = 1 * node._1
+          //ic
+      })
+      
+      //println(IC.count)
+//      //var tempDistanceRDD = sssp2.vertices.map(v => (sourceId, v._1, v._2))
+//      var tempDistanceRDD = shortestPathToAllNodes.vertices.collect {
+//        case v if (wpathList.exists(p => (p._1 == sourceId) && (p._2 == v._1))) =>
+//          (sourceId, v._1, v._2)
+//      }
+//
+//      distanceRDD = distanceRDD.union(tempDistanceRDD)
 
       //Finding IC part
-      val nodeIC = calculateIC(triples, nodeList(w)._2, totalInstancesCount)
+//      val nodeIC = calculateIC(triples, nodeList(0)._2, totalInstancesCount)
+//
+//      var tempIC = spark.sparkContext.parallelize(List((nodeList(w)._1, nodeIC)))
+//      IC = IC.union(tempIC)
 
-      var tempIC = spark.sparkContext.parallelize(List((nodeList(w)._1, nodeIC)))
-      IC = IC.union(tempIC)
-
-    }
+    //}
 
     /*This part calculate the Least Common Subsumer for all the node pairs and the WPATH score.*/
 
-    val depth = findDepth(distanceRDD, root)
-    depth.foreach(println(_))   
-    var depthCount = depth.length
+    //val depth = findDepth(distanceRDD, root)
+      //val depth = findDepth()
+    //depth.foreach(println(_))   
+    //var depthCount = depth.length
     
     //var lcsList = spark.sparkContext.emptyRDD[(VertexId, VertexId, VertexId)] //The first two parameters are nodes and the last one is the LCS.
     var WPATH = spark.sparkContext.emptyRDD[(VertexId, VertexId, Double)]
+    
+    
 
-    for (y <- 0 until 10) {
+//    for (y <- 0 until 5) {
+//
+//      if (!(wpathList(y)._1 == wpathList(y)._2)) {
+//
+//        val node1 = wpathList(y)._1
+//        val node2 = wpathList(y)._2
+//
+//        val newNodePath1 = depth.filter(f => (f._1 == node1)).flatMap(f => f._2._2)
+//        val newNodePath2 = depth.filter(f => (f._1 == node2)).flatMap(f => f._2._2)
+//        var lcs = findLCS(newNodePath1, newNodePath2, root)
+//        
+//        var tempDistance = distanceRDD.filter(f =>
+//          (f._1 == node1 && f._2 == node2))
+//          .map(f => f._3._1).first
+//        var ic = IC.filter(f => f._1 == lcs).map(f => f._2).first
+//        //wpath
+//        val wpath = calculateWpath(tempDistance, IC, lcs, k)      
+//        val tempWPATH = spark.sparkContext.parallelize(List((wpathList(y)._1, wpathList(y)._2, wpath)))
+//        WPATH = WPATH.union(tempWPATH)
+//
+//      } 
+//      else {
+//        val tempWPATH = spark.sparkContext.parallelize(List((wpathList(y)._1, wpathList(y)._2, 1.0)))
+//        WPATH = WPATH.union(tempWPATH)
+//      }
+//    }
 
-      if (!(wpathList(y)._1 == wpathList(y)._2)) {
-
-        val node1 = wpathList(y)._1
-        val node2 = wpathList(y)._2
-
-        val newNodePath1 = depth.filter(f => (f._1 == node1)).flatMap(f => f._2._2)
-        val newNodePath2 = depth.filter(f => (f._1 == node2)).flatMap(f => f._2._2)
-        var lcs = findLCS(newNodePath1, newNodePath2, root)
-        
-        var tempDistance = distanceRDD.filter(f =>
-          (f._1 == node1 && f._2 == node2))
-          .map(f => f._3._1).first
-        var ic = IC.filter(f => f._1 == lcs).map(f => f._2).first
-        //wpath
-        val wpath = calculateWpath(tempDistance, IC, lcs, k)      
-        val tempWPATH = spark.sparkContext.parallelize(List((wpathList(y)._1, wpathList(y)._2, wpath)))
-        WPATH = WPATH.union(tempWPATH)
-
-      } 
-      else {
-        val tempWPATH = spark.sparkContext.parallelize(List((wpathList(y)._1, wpathList(y)._2, 1.0)))
-        WPATH = WPATH.union(tempWPATH)
-      }
-    }
-
-    WPATH.foreach(println(_))
-    println(WPATH.count)
+    //WPATH.foreach(println(_))
+    //println(WPATH.count)
     
 
     spark.stop
@@ -219,14 +243,14 @@ object Semantic {
     sssp
   }
 
-  //IC
-  def calculateIC(triples: RDD[Triple], node: Node, totalInstancesCount: Double): Double = {
+  //IC  
+  def calculateIC(triples: Array[Triple], node: Node, totalInstancesCount: Double): Double = {
     var classInstances = triples
       .filter(triple => (triple.predicateMatches(RDF.`type`.asNode()) &&
         (triple.getSubject.isURI) &&
         (triple.objectMatches(node))))
 
-    var classInstancesCount = classInstances.count.toDouble
+    var classInstancesCount = classInstances.length.toDouble
 
     var ic = -(scala.math.log10(classInstancesCount / totalInstancesCount)).toDouble
 
