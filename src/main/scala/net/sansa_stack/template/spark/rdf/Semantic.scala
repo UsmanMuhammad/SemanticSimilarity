@@ -33,13 +33,13 @@ object Semantic {
   def main(args: Array[String]) {
     parser.parse(args, Config()) match {
       case Some(config) =>
-        run(config.in)
+        run(config.in, config.out)
       case None =>
         println(parser.usage)
     }
   }
 
-  def run(input: String): Unit = {
+  def run(input: String, output: String): Unit = {
 
     val spark = SparkSession.builder
       .appName(s"Semantic Similarity  $input")
@@ -119,7 +119,9 @@ object Semantic {
       }
     }
     
-    WPATH.foreach(println(_))
+    val qPath = output + "/" + 1 + "/"
+    
+    WPATH.saveAsTextFile(qPath)
     
     
 
@@ -274,7 +276,7 @@ object Semantic {
     wpath
   }
 
-  case class Config(in: String = "")
+  case class Config(in: String = "", out: String = "")
 
   val parser = new scopt.OptionParser[Config]("SANSA - Semantic Similarity example") {
 
@@ -283,6 +285,10 @@ object Semantic {
     opt[String]('i', "input").required().valueName("<path>").
       action((x, c) => c.copy(in = x)).
       text("path to file that contains the data (in N-Triples format)")
+      
+    opt[String]('o', "output").required().valueName("<directory>").
+      action((x, c) => c.copy(out = x)).
+      text("the output directory")
 
     help("help").text("prints this usage text")
   }
