@@ -85,43 +85,72 @@ object Semantic {
         
     var lcsList = spark.sparkContext.emptyRDD[(VertexId, VertexId, VertexId)] //The first two parameters are nodes and the last one is the LCS.
     var WPATH = spark.sparkContext.emptyRDD[(VertexId, VertexId, Double)]
-
+    
     //This part calculates the Information Content and the shortest distance from every node to every other node.   
-    for (i <- 0 until 15) {
+    for (i <- 0 until 5) {
                   
-      val id = VertexIds(i)._1
+      val id1 = VertexIds(i)._1
       val node = VertexIds(i)._2
-      val sssp = findShortestPath(graph, id)
-      val depth = findDepth(distanceFromRoot, id)
+      val sssp = findShortestPath(graph, id1)
+      val depth = findDepth(distanceFromRoot, id1)
 
       val newNodePath1 = depth.flatMap(f => f._2._2).toList
       
-      for (j <- 1 until 15) {
+      for (j <- 1 until 5) {
         
+                
         val id2 = VertexIds(j)._1
         val node2 = VertexIds(j)._2
-        val depth = findDepth(distanceFromRoot, id2)
+        
+        //If values are already calculated then don't do anything.
+        if (WPATH.filter(id => ((id._1 == id1) && (id._2 == id2))).take(1).length > 0 ||
+            WPATH.filter(id => ((id._2 == id1) && (id._1 == id2))).take(1).length > 0) {         
+          
+        }
+        
+        else {
+        
+        	//For the same node, the WPATH is 1.
+        	if (id1 == id2) {
+        		val tempWPATH = spark.sparkContext.parallelize(List((id1, id2, 1.0)))        
+        		WPATH = WPATH.union(tempWPATH)
+        	}
 
-        val newNodePath2 = depth.flatMap(f => f._2._2).toList
-        
-        val lcs = findLCS(newNodePath1, newNodePath2, root)
-        val lcsNode = VertexIds.filter(f => f._1 == lcs).map(f => f._2)
+        	else {
+        		val depth = findDepth(distanceFromRoot, id2)
 
-        val ic = calculateIC(spark, triples, lcsNode(0), totalInstancesCount)
-        val distanceTemp = sssp.vertices.filter(f => f._1 == id2).map(f => f._2._1).take(1)
-        
-        val wpath = calculateWpath(distanceTemp(0), ic, k)
-        
-        
-        val tempWPATH = spark.sparkContext.parallelize(List((id, id2, wpath)))
-        WPATH = WPATH.union(tempWPATH)
+        		val newNodePath2 = depth.flatMap(f => f._2._2).toList
 
+        		val lcs = findLCS(newNodePath1, newNodePath2, root)
+        		val lcsNode = VertexIds.filter(f => f._1 == lcs).map(f => f._2)
+
+        		val ic = calculateIC(spark, triples, lcsNode(0), totalInstancesCount)
+        		val distanceTemp = sssp.vertices.filter(f => f._1 == id2).map(f => f._2._1).first
+
+        		val wpath = calculateWpath(distanceTemp, ic, k)
+
+        		if (distanceTemp == Double.PositiveInfinity) {
+
+        			val tempWPATH = spark.sparkContext.parallelize(List((id1, id2, 0.0)))
+        			WPATH = WPATH.union(tempWPATH)
+        		}
+
+        		else {
+        			val tempWPATH = spark.sparkContext.parallelize(List((id1, id2, wpath)))
+        			WPATH = WPATH.union(tempWPATH)
+        		}
+        		
+        	}
+        }
       }
     }
     
-    val qPath = output + "/" + 1 + "/"
+    val qPath = output + "/" + 3 + "/"
+    //WPATH.foreach(println(_))
     
-    WPATH.saveAsTextFile(qPath)
+    WPATH
+    .repartition(1)
+    .saveAsTextFile(qPath)
     
     
 
@@ -243,7 +272,6 @@ object Semantic {
 
     var ic = -(scala.math.log10(classInstancesCount / totalInstancesCount)).toDouble
 
-    //spark.sparkContext.parallelize(Seq((node, ic)))
     ic
   }
 
@@ -270,7 +298,6 @@ object Semantic {
   
   //wpath
   def calculateWpath(tempDistance: Double, ic: Double, k: Double): Double = {
-    //var ic = IC.filter(f => f._1 == lcs).map(f => f._2).first   
     val wpath = 1.0 / (1.0 + (tempDistance * pow(k, ic)))
     
     wpath
