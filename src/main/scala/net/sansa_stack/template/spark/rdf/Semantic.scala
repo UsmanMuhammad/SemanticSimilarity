@@ -29,7 +29,7 @@ object Semantic {
   def main(args: Array[String]) {
     parser.parse(args, Config()) match {
       case Some(config) =>
-        run(config.in, config.out, config.k)
+        run(config.in, config.out, config.constant)
       case None =>
         println(parser.usage)
     }
@@ -90,7 +90,7 @@ object Semantic {
 
     
     //This part calculates the Information Content and the shortest distance from every node to every other node.   
-    for (i <- 0 until totalNodes - 1) {
+    for (i <- 0 until 3) {
                   
       val id1 = VertexIds(i)._1
       val node = VertexIds(i)._2
@@ -103,7 +103,7 @@ object Semantic {
         f => (VertexIds(i)._1, (f._2._2))    
       )
       
-      for (j <- 1 until totalNodes) {
+      for (j <- 1 until 2) {
         
         val id2 = VertexIds(j)._1
         val node2 = VertexIds(j)._2
@@ -169,10 +169,11 @@ object Semantic {
         }
       }
     }
-
+    var qpath = output + "/result/"
+    
     WPATH
     .repartition(1)
-    .saveAsTextFile(output)    
+    .saveAsTextFile(qpath)    
 
     spark.stop
 
@@ -286,7 +287,7 @@ object Semantic {
         }
     }
 
-  case class Config(in: String = "", out: String = "", k: Double = 0.0)
+  case class Config(in: String = "", out: String = "", constant: Double = 0.0)
 
   val parser = new scopt.OptionParser[Config]("SANSA - Semantic Similarity example") {
 
@@ -301,8 +302,8 @@ object Semantic {
       text("the output directory")
       
     //Jaccard similarity threshold value
-    opt[Double]('t', "threshold").required().
-      action((x, c) => c.copy(k = x)).
+    opt[Double]('k', "constant").required().
+      action((x, c) => c.copy(constant = x)).
       text("k constant for wpath")
 
     help("help").text("prints this usage text")
