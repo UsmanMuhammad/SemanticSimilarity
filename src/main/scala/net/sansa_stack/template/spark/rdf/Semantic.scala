@@ -20,24 +20,28 @@ import net.sansa_stack.rdf.spark.model._
 import org.apache.jena.graph.{ Node, Triple }
 import org.apache.jena.vocabulary.{ OWL, RDF, RDFS, XSD }
 import org.apache.spark.mllib.rdd.RDDFunctions._
+import java.nio.file._
+import java.nio.file.attribute.BasicFileAttributes
+import java.io.IOException
 
 object Semantic {
 
   def main(args: Array[String]) {
     parser.parse(args, Config()) match {
       case Some(config) =>
-        run(config.in, config.out)
+        run(config.in, config.out, config.k)
       case None =>
         println(parser.usage)
     }
   }
 
-  def run(input: String, output: String): Unit = {
+  def run(input: String, output: String, k: Double): Unit = {
 
+    removePathFiles(Paths.get(output))
+    
     val spark = SparkSession.builder
       .appName(s"Semantic Similarity  $input")
-      //.master("spark://172.18.160.16:3077")
-      .master("local[*]")
+      .master("spark://172.18.160.16:3090")
       .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
       .getOrCreate()
 
@@ -55,12 +59,13 @@ object Semantic {
 
     val root = graph.vertices.first
 
-    var k = 0.5; //Value of k that we use in wpath method.
+    //var k = 0.5; //Value of k that we use in wpath method.
     var ic = 0.0
 
     //Get only the VertexIds of all the nodes.
     val VertexIds: Array[(VertexId, Node)] = graph.vertices.map(node => node).collect()
     val totalNodes = VertexIds.length
+
 
     //Total instances that we need every time we calculate IC of any node.
     val totalInstances = triples
@@ -82,9 +87,10 @@ object Semantic {
     var distanceRDD = spark.sparkContext.emptyRDD[(VertexId, VertexId, (Double, List[VertexId]))]
     //var IC = spark.sparkContext.emptyRDD[(VertexId, Node, Double)]
     //var lcsList = spark.sparkContext.emptyRDD[(VertexId, VertexId, VertexId)]
+
     
     //This part calculates the Information Content and the shortest distance from every node to every other node.   
-    for (i <- 0 until totalNodes-1) {
+    for (i <- 0 until totalNodes - 1) {
                   
       val id1 = VertexIds(i)._1
       val node = VertexIds(i)._2
@@ -108,7 +114,6 @@ object Semantic {
                   ((id._1 == id2) && (id._2 == id1)))
                   .take(1)
                   .length > 0) {         
-          
         }
         
         else {
@@ -129,38 +134,23 @@ object Semantic {
         				)
 
         		val JoinedNodePaths = newNodePath1.join(newNodePath2)
+        		
+        		val lcs = findLCS(JoinedNodePaths, root._1)           
 
-        		val lcs = JoinedNodePaths.map{
-        			case (key, (v1, v2)) => {
-        				var j = 0
-        				var lcs: VertexId = root._1
-        					
-        				while (j < v1.length && j < v2.length) {
-        					if (v1(j) == v2(j)) {
-        						lcs = v1(j)
-        					}
-        						
-        					j = j + 1
-        				}
-        					
-        				lcs
-        			}
-        		}.first           
+        		val lcsNode = graph.vertices.filter(f => f._1 == lcs).map(f => f._2).take(1)(0)
 
-        		val lcsNode = VertexIds.filter(f => f._1 == lcs).map(f => f._2)
-
-        		if (lcsNode(0) == root._2) {
+        		if (lcs == root._1) {
         		  ic = 0.0
         		}
         		
         		else {
-              ic = calculateIC(triples, lcsNode(0), totalInstancesCount)
+              ic = calculateIC(triples, lcsNode, totalInstancesCount)
         		}
         		
-        		val tempIC = spark.sparkContext.parallelize(List((lcs, lcsNode(0), ic)))
+        		//val tempIC = spark.sparkContext.parallelize(List((lcs, lcsNode, ic)))
         		//IC = IC.union(tempIC)
 
-        		val distanceTemp = sssp.vertices.filter(f => f._1 == id2).map(f => f._2._1).first
+        		val distanceTemp = sssp.vertices.filter(f => f._1 == id2).map(f => f._2._1).take(1)(0)
 
         		val wpath = calculateWpath(distanceTemp, ic, k)
 
@@ -179,13 +169,10 @@ object Semantic {
         }
       }
     }
-    
-    val qPath = output + "/" + 9 + "/"
 
-    //WPATH.foreach(println(_))
     WPATH
     .repartition(1)
-    .saveAsTextFile(qPath)    
+    .saveAsTextFile(output)    
 
     spark.stop
 
@@ -256,17 +243,23 @@ object Semantic {
   }
 
   //Find LCS
-  def findLCS(newNodePath1: List[VertexId], newNodePath2: List[VertexId], root: (VertexId, Node)): VertexId = {
-    var j = 0
-    var lcs: VertexId = root._1
-    while (j < newNodePath1.length && j < newNodePath2.length) {
-      if (newNodePath1(j) == newNodePath2(j)) {
-        lcs = newNodePath1(j)
-      }
-      j = j + 1
-    }
-    
-    lcs
+  def findLCS(JoinedNodePaths: RDD[(VertexId, (List[VertexId], List[VertexId]))], root: VertexId): VertexId = {
+		  val lcs = JoinedNodePaths.map{
+        		  case (key, (v1, v2)) => {
+        			  var j = 0
+        				var lcs: VertexId = root
+
+        				while (j < v1.length && j < v2.length) {
+        					if (v1(j) == v2(j)) {
+        						lcs = v1(j)
+        					}
+                  j = j + 1
+        				}
+
+        			lcs
+        		 }
+        	}.take(1)
+		  lcs(0)
   }
   
   //wpath
@@ -275,8 +268,25 @@ object Semantic {
 
     wpath
   }
+  
+  // remove path files
+    def removePathFiles(root: Path): Unit = {
+        if (Files.exists(root)) {
+            Files.walkFileTree(root, new SimpleFileVisitor[Path] {
+                override def visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult = {
+                    Files.delete(file)
+                    FileVisitResult.CONTINUE
+                }
 
-  case class Config(in: String = "", out: String = "")
+                override def postVisitDirectory(dir: Path, exc: IOException): FileVisitResult = {
+                    Files.delete(dir)
+                    FileVisitResult.CONTINUE
+                }
+            })
+        }
+    }
+
+  case class Config(in: String = "", out: String = "", k: Double = 0.0)
 
   val parser = new scopt.OptionParser[Config]("SANSA - Semantic Similarity example") {
 
@@ -289,6 +299,11 @@ object Semantic {
     opt[String]('o', "output").required().valueName("<directory>").
       action((x, c) => c.copy(out = x)).
       text("the output directory")
+      
+    //Jaccard similarity threshold value
+    opt[Double]('t', "threshold").required().
+      action((x, c) => c.copy(k = x)).
+      text("k constant for wpath")
 
     help("help").text("prints this usage text")
   }
