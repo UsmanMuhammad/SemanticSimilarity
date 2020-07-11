@@ -24,7 +24,7 @@ import java.nio.file._
 import java.nio.file.attribute.BasicFileAttributes
 import java.io.IOException
 
-object Semantic {
+object Semantic extends Serializable {
 
   def main(args: Array[String]) {
     parser.parse(args, Config()) match {
@@ -40,8 +40,9 @@ object Semantic {
     removePathFiles(Paths.get(output))
     
     val spark = SparkSession.builder
-      .appName(s"Semantic Similarity  $input")
+      .appName("Semantic Similarity  $input")
       .master("spark://172.18.160.16:3090")
+      //.master("local[*]")
       .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
       .getOrCreate()
 
@@ -58,6 +59,8 @@ object Semantic {
     val graph = buildGraph(triples)
 
     val root = graph.vertices.first
+    
+    val zero = 0
 
     //var k = 0.5; //Value of k that we use in wpath method.
     var ic = 0.0
@@ -84,13 +87,13 @@ object Semantic {
      */
     var WPATH = spark.sparkContext.emptyRDD[((VertexId, VertexId), (VertexId, Double), Double)]
     
-    var distanceRDD = spark.sparkContext.emptyRDD[(VertexId, VertexId, (Double, List[VertexId]))]
+    //var distanceRDD = spark.sparkContext.emptyRDD[(VertexId, VertexId, (Double, List[VertexId]))]
     //var IC = spark.sparkContext.emptyRDD[(VertexId, Node, Double)]
     //var lcsList = spark.sparkContext.emptyRDD[(VertexId, VertexId, VertexId)]
 
     
     //This part calculates the Information Content and the shortest distance from every node to every other node.   
-    for (i <- 0 until 3) {
+    for (i <- 0 until 4) {
                   
       val id1 = VertexIds(i)._1
       val node = VertexIds(i)._2
@@ -100,10 +103,10 @@ object Semantic {
       val newNodePath1 = distanceFromRoot
       .filter(vertex => vertex._1 == VertexIds(i)._1)
       .map(
-        f => (VertexIds(i)._1, (f._2._2))    
-      )
+    		  f => (VertexIds(i)._1, (f._2._2))    
+    		  )
       
-      for (j <- 1 until 2) {
+      for (j <- 1 until 5) {
         
         val id2 = VertexIds(j)._1
         val node2 = VertexIds(j)._2
@@ -169,11 +172,12 @@ object Semantic {
         }
       }
     }
-    var qpath = output + "/result/"
+    
+    var path = output + "/" + 1 + "/"
     
     WPATH
     .repartition(1)
-    .saveAsTextFile(qpath)    
+    .saveAsTextFile(path)    
 
     spark.stop
 
@@ -245,21 +249,21 @@ object Semantic {
 
   //Find LCS
   def findLCS(JoinedNodePaths: RDD[(VertexId, (List[VertexId], List[VertexId]))], root: VertexId): VertexId = {
-		  val lcs = JoinedNodePaths.map{
-        		  case (key, (v1, v2)) => {
-        			  var j = 0
-        				var lcs: VertexId = root
+		  var j = 0
+      val lcs = JoinedNodePaths.map{
+        		      case (key, (v1, v2)) => {
+        		    			  var lcs: VertexId = root
 
-        				while (j < v1.length && j < v2.length) {
-        					if (v1(j) == v2(j)) {
-        						lcs = v1(j)
-        					}
-                  j = j + 1
-        				}
+        		    			  while (j < v1.length && j < v2.length) {
+        		    				  if (v1(j) == v2(j)) {
+        		    					  lcs = v1(j)
+        		    				  }
+        		    				  j = j + 1
+        		    			  }
 
-        			lcs
-        		 }
-        	}.take(1)
+        		    	  lcs
+        		      }
+		  }.take(1)
 		  lcs(0)
   }
   
@@ -310,3 +314,4 @@ object Semantic {
   }
 
 }
+
