@@ -41,14 +41,14 @@ class Similarity(
     val root = graph.vertices.first
 
     val zero = 0
-    var countChek: Int = 0
 
     var ic = 0.0
 
     //Get only the VertexIds of all the nodes.
     val VertexIdsRDD = graph.vertices.map(node => node)
     val VertexIds: Array[(VertexId, Node)] = graph.vertices.map(node => node).collect()
-    val totalNodes = VertexIds.length
+    //val totalNodes = VertexIds.length
+    val idsList = graph.vertices.map(nodes => nodes._1).collect().toList
 
     //Total instances that we need every time we calculate IC of any node.
     val totalInstances = triples
@@ -60,83 +60,165 @@ class Similarity(
     //Distance of all the nodes from the first node which is the root.
     val distanceFromRoot = this.findShortestPath(graph, root._1).vertices.map { node => node }
 
-    //This part calculates the Information Content and the shortest distance from every node to every other node.
-    for (i <- 0 until totalNodes - 1) {
+//    //This part calculates the Information Content and the shortest distance from every node to every other node.
+//    var rdd = VertexIdsRDD.map {
+//      nodes =>
+//        {
+//
+//          val vertexIds = idsList
+//
+//          val id1 = nodes._1
+//          val node1 = nodes._2
+//
+//          val sssp = this.findShortestPath(graph, id1)
+//
+//          val newNodePath1 = distanceFromRoot
+//            .filter(vertex => vertex._1 == id1)
+//            .map(
+//              f => (id1, (f._2._2)))
+//
+//          //val totalNodes1 = totalNodes
+//          val matchingTriples = triples
+//          val matchingTotalInstancesCount = totalInstancesCount
+//
+//          for (j <- 0 until idsList.length) {
+//
+//            val id2 = VertexIds(j)._1
+//            val node2 = VertexIds(j)._2
+//
+//            val newNodePath2 = distanceFromRoot
+//              .filter(vertex => vertex._1 == id2)
+//              .map(
+//                f => (id1, (f._2._2)))
+//
+//            val JoinedNodePaths = newNodePath1.join(newNodePath2)
+//
+//            val lcs = this.findLCS(JoinedNodePaths, root._1)
+//
+//            val lcsNode = graph.vertices.filter(f => f._1 == lcs).map(f => f._2).take(1)(0)
+//
+//            if (lcs == root._1) {
+//              ic = 0.0
+//            } else {
+//              ic = this.calculateIC(matchingTriples, lcsNode, matchingTotalInstancesCount)
+//            }
+//
+//            //val tempIC = spark.sparkContext.parallelize(List((lcs, lcsNode, ic)))
+//            //IC = IC.union(tempIC)
+//
+//            val distanceTemp = sssp.vertices.filter(f => f._1 == id2).map(f => f._2._1)
+//
+//            val wpath = this.calculateWpath(distanceTemp.take(1)(0), ic, k)
+//
+//            //if both are same, then wpath is 1
+//            if (id1 == id2) {
+//              ((id1, id2), (id1, 1.0), 1.0)
+//            } else {
+//
+//              if (distanceTemp == Double.PositiveInfinity) {
+//                ((id1, id2), (lcs, ic), 0.0)
+//              } else {
+//                ((id1, id2), (lcs, ic), wpath)
+//              }
+//            }
+//            if (j == 1) {
+//              WPATH = tempWPATH
+//            } else {
+//              if (WPATH.filter(
+//                id => ((id._1 == id1) && (id._2 == id2)) ||
+//                  ((id._1 == id2) && (id._2 == id1)))
+//                .take(1)
+//                .length > 0) {
+//
+//              } else {
+//                WPATH = WPATH.union(tempWPATH)
+//              }
+//            }
+//          }
+//        }
+//    }
 
-      val id1 = VertexIds(i)._1
-      val node = VertexIds(i)._2
-      
-      val totalNodes1 = totalNodes
-
-      val sssp = this.findShortestPath(graph, id1)
-
-      val newNodePath1 = distanceFromRoot
-        .filter(vertex => vertex._1 == id1)
-        .map(
-          f => (id1, (f._2._2)))
-          
-
-      for (j <- 1 until totalNodes1 - 1) {
-        countChek += 1
-
-        val id2 = VertexIds(j)._1
-        val node2 = VertexIds(j)._2
-
-        val newNodePath2 = distanceFromRoot
-          .filter(vertex => vertex._1 == id2)
-          .map(
-            f => (id1, (f._2._2)))
-
-
-        val JoinedNodePaths = newNodePath1.join(newNodePath2)
-
-        val lcs = this.findLCS(JoinedNodePaths, root._1)
-
-        val lcsNode = graph.vertices.filter(f => f._1 == lcs).map(f => f._2).take(1)(0)
-
-        if (lcs == root._1) {
-          ic = 0.0
-        } else {
-          ic = this.calculateIC(triples, lcsNode, totalInstancesCount)
-        }
-
-        //val tempIC = spark.sparkContext.parallelize(List((lcs, lcsNode, ic)))
-        //IC = IC.union(tempIC)
-
-        val distanceTemp = sssp.vertices.filter(f => f._1 == id2).map(f => f._2._1)
-
-        val wpath = this.calculateWpath(distanceTemp.take(1)(0), ic, k)
-
-        var tempWPATH = distanceTemp
-          .map(
-            node => {
-              //if both are same, then wpath is 1
-              if (id1 == id2) {
-                ((id1, id2), (id1, 1.0), 1.0)
+        //This part calculates the Information Content and the shortest distance from every node to every other node.
+        for (i <- 0 until (VertexIds.length - 1)) {
+    
+          val id1 = VertexIds(i)._1
+          val node = VertexIds(i)._2
+    
+    
+          val sssp = this.findShortestPath(graph, id1)
+    
+          val newNodePath1 = distanceFromRoot
+            .filter(vertex => vertex._1 == id1)
+            .map(
+              f => (id1, (f._2._2)))
+    
+    
+          //val totalNodes1 = totalNodes
+          val matchingTriples = triples
+          val matchingTotalInstancesCount = totalInstancesCount
+    
+          for (j <- 1 until VertexIds.length) {
+    
+            val id2 = VertexIds(j)._1
+            val node2 = VertexIds(j)._2
+    
+            val newNodePath2 = distanceFromRoot
+              .filter(vertex => vertex._1 == id2)
+              .map(
+                f => (id1, (f._2._2)))
+    
+    
+            val JoinedNodePaths = newNodePath1.join(newNodePath2)
+    
+            val lcs = this.findLCS(JoinedNodePaths, root._1)
+    
+            val lcsNode = graph.vertices.filter(f => f._1 == lcs).map(f => f._2).take(1)(0)
+    
+            if (lcs == root._1) {
+              ic = 0.0
+            }
+            else {
+              ic = this.calculateIC(matchingTriples, lcsNode, matchingTotalInstancesCount)
+            }
+    
+            //val tempIC = spark.sparkContext.parallelize(List((lcs, lcsNode, ic)))
+            //IC = IC.union(tempIC)
+    
+            val distanceTemp = sssp.vertices.filter(f => f._1 == id2).map(f => f._2._1)
+            val tempDistance = distanceTemp.first
+    
+            val wpath = this.calculateWpath(tempDistance, ic, k)
+    
+            var tempWPATH = distanceTemp
+              .map(
+                node => {
+                  //if both are same, then wpath is 1
+                  if (id1 == id2) {
+                    ((id1, id2), (id1, 1.0), 1.0)
+                  } else {
+    
+                    if (tempDistance == Double.PositiveInfinity) {
+                      ((id1, id2), (lcs, ic), 0.0)
+                    } else {
+                      ((id1, id2), (lcs, ic), wpath)
+                    }
+                  }
+                })
+            if (i == 0 && j == 1) {
+              WPATH = tempWPATH
+            } else {
+              if (WPATH.filter(
+                id => ((id._1 == id1) && (id._2 == id2)) ||
+                  ((id._1 == id2) && (id._2 == id1)))
+                .take(1)
+                .length > 0) {
+    
               } else {
-
-                if (distanceTemp == Double.PositiveInfinity) {
-                  ((id1, id2), (lcs, ic), 0.0)
-                } else {
-                  ((id1, id2), (lcs, ic), wpath)
-                }
+                WPATH = WPATH.union(tempWPATH)
               }
-            })
-        if (countChek == 1) {
-          WPATH = tempWPATH
-        } else {
-          if (WPATH.filter(
-            id => ((id._1 == id1) && (id._2 == id2)) ||
-              ((id._1 == id2) && (id._2 == id1)))
-            .take(1)
-            .length > 0) {
-
-          } else {
-            WPATH = WPATH.union(tempWPATH)
+            }
           }
         }
-      }
-    }
 
     var path = output + "/results/"
 
@@ -197,10 +279,13 @@ class Similarity(
   //IC
   def calculateIC(triples: RDD[Triple], node: Node, totalInstancesCount: Double): Double = {
 
-    var classInstances = triples
+    var matchingNode = node
+    var matchingTriples = triples
+
+    var classInstances = matchingTriples
       .filter(triple => (triple.predicateMatches(RDF.`type`.asNode()) &&
         (triple.getSubject.isURI) &&
-        (triple.objectMatches(node))))
+        (triple.objectMatches(matchingNode))))
 
     var classInstancesCount = classInstances.count
 
